@@ -1,9 +1,93 @@
 ---
-- name: Install Docker and Configuration
-  hosts: docker_hosts
+- name: Setup Docker APT repository on Ubuntu
+  hosts: all
   become: yes
 
+  vars:
+    ubuntu_codename: "{{ ansible_facts['lsb']['codename'] }}"
+
   tasks:
-    - name: update the apt repository
-      command:
-        cmd: sudo apt update
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+
+    - name: Create directory for apt keyrings
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+
+    - name: Add Docker repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.sources
+        mode: '0644'
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/ubuntu
+          Suites: {{ ubuntu_codename }}
+          Components: stable
+          Signed-By: /etc/apt/keyrings/docker.asc
+
+    - name: Update apt cache after adding Docker repo
+      ansible.builtin.apt:
+        update_cache: yes
+      
+    - name: Wait 30 seconds
+      pause:
+        seconds: 30             #for updating the apt repository
+
+    - name: Install Docker CE and related packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Check Docker status
+      command: systemctl status docker
+      ignore_errors: yes
+
+    - name: Start Docker service
+      command: systemctl start docker
+
+    - name: Run hello-world (as root)
+      command: docker run hello-world
+      ignore_errors: yes
+
+    - name: Create docker group
+      group:
+        name: docker
+        state: present
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Run newgrp docker (no effect in Ansible, but included)
+      command: newgrp docker
+      ignore_errors: yes
+
+    - name: Run hello-world without sudo
+      command: docker run hello-world
+      become: false
+      ignore_errors: yes
