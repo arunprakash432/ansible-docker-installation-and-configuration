@@ -1,5 +1,5 @@
 ---
-- name: Setup Docker APT repository on Ubuntu
+- name: Install docker on Ubuntu
   hosts: all
   become: yes
 
